@@ -1,0 +1,137 @@
+import static java.nio.file.StandardOpenOption.APPEND;
+import static java.nio.file.StandardOpenOption.CREATE;
+
+import java.io.BufferedOutputStream;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+
+import javax.annotation.Resource;
+import javax.ejb.LocalBean;
+import javax.ejb.Stateless;
+import javax.jms.ConnectionFactory;
+import javax.jms.Queue;
+import javax.jms.QueueConnection;
+import javax.jms.QueueSender;
+import javax.jms.QueueSession;
+import javax.jms.Session;
+import javax.jms.TextMessage;
+import javax.ws.rs.Consumes;
+import javax.ws.rs.GET;
+import javax.ws.rs.POST;
+import javax.ws.rs.Path;
+import javax.ws.rs.PathParam;
+import javax.ws.rs.Produces;
+import javax.ws.rs.core.MediaType;
+
+@Stateless
+@Path("/chat")
+@LocalBean
+public class ChatBean {
+	@Resource(mappedName = "java:/ConnectionFactory")
+	private ConnectionFactory connectionFactory;
+	@Resource(mappedName = "java:jboss/exported/jms/queue/mojQueue")
+	private Queue queue;
+	
+	@GET
+	@Path("/test")
+	@Produces(MediaType.TEXT_PLAIN)
+	public String test() {
+		return "OK";
+	}
+	
+	@POST
+	@Path("/post/{text}")
+	@Produces(MediaType.TEXT_PLAIN)
+	public String post(@PathParam("text") String text) {
+		System.out.println("Received message: " + text);
+		
+		try {
+			QueueConnection connection = (QueueConnection) connectionFactory.createConnection();
+			QueueSession session = connection.createQueueSession(false, Session.AUTO_ACKNOWLEDGE);
+			QueueSender sender = session.createSender(queue);
+			
+			TextMessage message = session.createTextMessage();
+			message.setText(text);
+			sender.send(message);
+		} catch(Exception ex) {
+			ex.printStackTrace();
+		}
+		return "OK";
+	}
+	
+	@POST
+	@Path("/register")
+	@Consumes({MediaType.APPLICATION_JSON})
+	@Produces(MediaType.TEXT_PLAIN)
+	public String register(String info) {
+		String[] t1 = info.split(",");
+		String[] t2 = {t1[0].split(":")[1], t1[1].split(":")[1]};
+		String finalstring = t2[0].substring(1, t2[0].length()-1)+":"+t2[1].substring(1, t2[1].length()-2)+"\n";
+		
+		String uname = t2[0].substring(1, t2[0].length()-1);
+		boolean available = true;
+		
+		byte data[] = finalstring.getBytes();
+		String basicp = new File("").getAbsolutePath();
+		java.nio.file.Path p = Paths.get(basicp+"/chatusers.txt");
+		
+		try(InputStream in = Files.newInputStream(p);
+				BufferedReader reader = new BufferedReader(new InputStreamReader(in))){
+			String line = null;
+			while((line = reader.readLine()) != null) {
+				if(uname.equals(line.split(":")[0])) {
+					available = false;
+					break;
+				}
+			}
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		
+		if(available) {
+			try(OutputStream out = new BufferedOutputStream(
+				Files.newOutputStream(p, CREATE, APPEND))){
+				out.write(data, 0, data.length);
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}else{
+			System.out.println("USERNAME TAKEN!");
+		}
+		return "OK";
+	}
+	
+	@POST
+	@Path("/login")
+	@Consumes({MediaType.APPLICATION_JSON})
+	@Produces(MediaType.TEXT_PLAIN)
+	public String login(String info) {
+		String[] t1 = info.split(",");
+		String[] t2 = {t1[0].split(":")[1], t1[1].split(":")[1]};
+		String uname = t2[0].substring(1, t2[0].length()-1);
+		String pw = t2[1].substring(1, t2[1].length()-2);
+		
+		boolean found = false;
+		
+		String basicp = new File("").getAbsolutePath();
+		java.nio.file.Path p = Paths.get(basicp+"/chatusers.txt");
+		try(InputStream in = Files.newInputStream(p);
+				BufferedReader reader = new BufferedReader(new InputStreamReader(in))){
+			String line = null;
+			while((line = reader.readLine()) != null) {
+				if(uname.equals(line.split(":")[0]) && pw.equals(line.split(":"))) {
+					found = true;
+					break;
+				}
+			}
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+}
